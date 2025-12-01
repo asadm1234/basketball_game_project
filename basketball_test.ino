@@ -1,0 +1,140 @@
+#include <LedControl.h>
+
+LedControl matrix = LedControl(10, 4, 5, 1);
+
+int trigPin = 7;
+int echoPin = 8;
+
+int buzzerPin = 9;
+int buttonPin = 2;
+
+int score = 0;
+bool gameRunning = false;
+
+unsigned long gameStartTime = 0;
+unsigned long lastScoreTime = 0;
+
+byte BigDigits[10][8] = {
+  {0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0x00},
+  {0x18,0x38,0x18,0x18,0x18,0x18,0x3C,0x00},
+  {0x3C,0x66,0x06,0x1C,0x30,0x60,0x7E,0x00},
+  {0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00},
+  {0x0C,0x1C,0x3C,0x6C,0x7E,0x0C,0x0C,0x00},
+  {0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0x00},
+  {0x1C,0x30,0x60,0x7C,0x66,0x66,0x3C,0x00},
+  {0x7E,0x06,0x0C,0x18,0x30,0x30,0x30,0x00},
+  {0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00},
+  {0x3C,0x66,0x66,0x3E,0x06,0x0C,0x38,0x00}
+};
+
+byte smallDigits[10][8] = {
+  {0xF0,0x90,0x90,0x90,0x90,0x90,0xF0,0x00},
+  {0x60,0x20,0x20,0x20,0x20,0x20,0x70,0x00},
+  {0xF0,0x10,0xF0,0x80,0x80,0x80,0xF0,0x00},
+  {0xF0,0x10,0x70,0x10,0x10,0x10,0xF0,0x00},
+  {0x90,0x90,0x90,0xF0,0x10,0x10,0x10,0x00},
+  {0xF0,0x80,0xF0,0x10,0x10,0x10,0xF0,0x00},
+  {0xF0,0x80,0xF0,0x90,0x90,0x90,0xF0,0x00},
+  {0xF0,0x10,0x10,0x20,0x20,0x20,0x20,0x00},
+  {0xF0,0x90,0xF0,0x90,0x90,0x90,0xF0,0x00},
+  {0xF0,0x90,0xF0,0x10,0x10,0x10,0xF0,0x00}
+};
+
+void showBigDigit(int n){
+  for(int r = 0; r < 8; r++){
+    matrix.setRow(0, r, BigDigits[n][r]);
+  }
+}
+
+void showTwoDigit(int n){
+  int tens = n / 10;
+  int ones = n % 10;
+
+  for(int r = 0; r < 8; r++){
+    byte left  = (smallDigits[tens][r] & 0xF0);
+    byte right = (smallDigits[ones][r] & 0xF0) >> 4;
+    matrix.setRow(0, r, left | right);
+  }
+}
+
+long getDistance(){
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 25000);
+  if(duration == 0) return 999;
+
+  return (duration * 0.034 / 2);
+}
+
+void resetGame(){
+  score = 0;
+  gameRunning = false;
+  matrix.clearDisplay(0);
+  showBigDigit(0);
+}
+
+void countdown(){
+  for(int i = 3; i > 0; i--){
+    showBigDigit(i);
+    tone(buzzerPin, 1000, 250);
+    delay(850);
+  }
+  tone(buzzerPin, 400, 600);
+  delay(600);
+  matrix.clearDisplay(0);
+}
+
+void setup(){
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
+
+  matrix.shutdown(0, false);
+  matrix.setIntensity(0, 12);
+  matrix.clearDisplay(0);
+  showBigDigit(0);
+}
+
+void loop(){
+  // start game when button is pressed
+  if(digitalRead(buttonPin) == LOW){
+    resetGame();
+    countdown();
+    gameRunning = true;
+    gameStartTime = millis();
+    delay(500);
+  }
+
+  if(!gameRunning) return;
+
+  // check if 1 minute passed
+  unsigned long elapsed = (millis() - gameStartTime) / 1000;
+  if(elapsed >= 60){
+    gameRunning = false;
+
+    tone(buzzerPin, 800, 300);
+    delay(400);
+    tone(buzzerPin, 500, 500);
+    return;
+  }
+
+  long dist = getDistance();
+
+  // smaller detect distance so it registers better
+  if(dist < 7){
+    if(millis() - lastScoreTime > 600){
+      score++;
+      tone(buzzerPin, 1200, 150);
+
+      if(score < 10) showBigDigit(score);
+      else showTwoDigit(score);
+
+      lastScoreTime = millis();
+    }
+  }
+}
